@@ -29,11 +29,10 @@ class QuantmageAPI:
             json.dump(self.response_data, json_file)
 
     def load_data(self):
-        return Quantmage_Data(self.data_file)
+        return Quantmage_Data.from_json(self.response_data)
 
 if __name__ == "__main__":
     # Example usage
     endpoint_id = '81e1430056f8e243f6ff97855738bdca'
     quantmage_output = QuantmageAPI(endpoint_id)
-    quantmage_output.save_data()
-
+    print("Test")
