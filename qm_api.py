@@ -2,7 +2,7 @@ from qm_dataclass import Quantmage_Data
 import requests
 import json
 
-class QuantmageAPI:
+class Quantmage_API:
     def __init__(self, endpoint_id):
         self.endpoint_id = endpoint_id
         self.url = f'https://quantmage.app/grimoire/backtest/{self.endpoint_id}'
@@ -34,5 +34,5 @@ class QuantmageAPI:
 if __name__ == "__main__":
     # Example usage
     endpoint_id = '81e1430056f8e243f6ff97855738bdca'
-    quantmage_output = QuantmageAPI(endpoint_id)
+    quantmage_output = Quantmage_API(endpoint_id)
     print("Test")
