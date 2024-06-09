@@ -31,7 +31,8 @@ class QuantmageAPI:
     def load_data(self):
         return Quantmage_Data(self.data_file)
 
-# Example usage
-endpoint_id = 'fc1a05b33b8e2a170584844265dfd998'
-quantmage_output = QuantmageAPI(endpoint_id)
+if __name__ == "__main__":
+    # Example usage
+    endpoint_id = 'fc1a05b33b8e2a170584844265dfd998'
+    quantmage_output = QuantmageAPI(endpoint_id)
 

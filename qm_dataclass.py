@@ -45,3 +45,6 @@ class Quantmage_Data:
         with open(file_path, 'r') as file:
             data = json.load(file)
         return Quantmage_Data.from_json(data)
+    
+if __name__ == "__main__":
+    pass
