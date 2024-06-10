@@ -18,6 +18,7 @@ class Day_Info:
     date : int
     indexes: List[int]
     allocation: Allocation
+    branches: List[int]
     profit: float
 
 @dataclass
@@ -28,15 +29,18 @@ class Quantmage_Data:
     allocation_history: List[List[Allocation]] = field(default_factory=list)
     visited_leaves_history: List[List[int]] = field(default_factory=list)
     length_of_backtest: int = field(default_factory=dict)
+    
     other_fields: Dict[str, Any] = field(default_factory=dict)
 
     @staticmethod
     def from_json(obj: Any) -> 'Quantmage_Data':
         _value_history = obj.get("value_history")
         
-        raw_dates = obj.get("dates")
+        with open('dates.json', 'r') as file:
+            raw_dates = json.load(file)["dates"]
         # Selects the dates the algo uses
         _dates = raw_dates[raw_dates.index(max(obj.get("data_ranges"))):]
+        
         # Format dates from YYYYMMDD to YYYY_MM_DD
         _formatted_dates = [datetime.strptime(str(date), "%Y%m%d").strftime("%Y_%m_%d") for date in raw_dates]
         
@@ -57,4 +61,6 @@ class Quantmage_Data:
         return Quantmage_Data.from_json(data)
     
 if __name__ == "__main__":
-    pass
+    data = Quantmage_Data.from_json_file("D:\\Git Repos\\quantmage_api\\81e1430056f8e243f6ff97855738bdca.json")
+    
+    
