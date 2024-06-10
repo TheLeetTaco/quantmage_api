@@ -24,7 +24,7 @@ class Day_Info:
 @dataclass
 class Quantmage_Data:
     value_history: List[float] = field(default_factory=list)
-    dates: List[str] = field(default_factory=list)
+    dates: List[int] = field(default_factory=list)
     formatted_dates: List[str] = field(default_factory=list)
     allocation_history: List[List[Allocation]] = field(default_factory=list)
     visited_leaves_history: List[List[int]] = field(default_factory=list)

@@ -15,22 +15,19 @@ class Quantmage_API:
 
     def fetch_data(self):
         params = {
-            "extra" : True
+            "extra" :"true"
         }
         
         # Make the POST request
         response = requests.post(self.url, params=params)
-        
-        # Save to a file
-        with open(self.data_file, 'w') as json_file:
-            json.dump(response.json(), json_file)
             
         # Check if the request was successful
         if response.status_code == 200:
             # Parse the JSON response
-            
             self.response_data = response.json()
-            
+            # Save to a file
+            with open(self.data_file, 'w') as json_file:
+                json.dump(self.response_data, json_file)
             print("Data has been collected")
         else:
             print(f"Request failed with status code {response.status_code}")
@@ -47,12 +44,13 @@ class Quantmage_API:
             
         # If our value history is longer then our dates
         if pull_dates or (len(backtest_len) > len(dates)):
-            # Then we need to pull do a non extra api pull
+            # Then we need to pull doing a non extra api pull
             print("Missing Dates Pulling")
             response = requests.post(self.url)
             with open('dates.json', 'w') as json_file:
                 print(response["dates"][-1])
                 json.dump({"dates": response["dates"]}, json_file)
+            print("Dates Updated")
 
     def load_data(self):
         return Quantmage_Data.from_json(self.response_data)
