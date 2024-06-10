@@ -1,2 +1,5 @@
 # Ignore all JSON files
 *.json
+
+# Ignore pyc files
+*.pyc
