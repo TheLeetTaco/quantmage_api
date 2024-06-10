@@ -1,6 +1,7 @@
 from qm_dataclass import Quantmage_Data
 import requests
 import json
+import time
 import os
 
 class Quantmage_API:
@@ -55,6 +56,15 @@ class Quantmage_API:
 
     def load_data(self):
         return Quantmage_Data.from_json(self.response_data)
+
+def batch_collect(ids):
+    collection = []
+    # We can only do one per second
+    for id in ids:
+        collection.append(Quantmage_API(id))
+        time.sleep(1)
+    
+    return collection
 
 if __name__ == "__main__":
     # Example usage
