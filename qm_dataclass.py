@@ -23,6 +23,7 @@ class Day_Info:
 
 @dataclass
 class Quantmage_Data:
+    spell_name: str = field(default_factory=list)
     value_history: List[float] = field(default_factory=list)
     dates: List[int] = field(default_factory=list)
     formatted_dates: List[str] = field(default_factory=list)
@@ -34,6 +35,7 @@ class Quantmage_Data:
 
     @staticmethod
     def from_json(obj: Any) -> 'Quantmage_Data':
+        _spell_name = obj.get("spell_name")
         _value_history = obj.get("value_history")
         
         with open('dates.json', 'r') as file:
@@ -52,7 +54,7 @@ class Quantmage_Data:
         known_fields = {"value_history", "dates", "allocation_history", "visited_leaves_history"}
         _other_fields = {k: v for k, v in obj.items() if k not in known_fields}
         
-        return Quantmage_Data(_value_history, _dates, _formatted_dates, _allocation_history, _visited_leaves_history, _length_of_backtest, _other_fields)
+        return Quantmage_Data(_spell_name, _value_history, _dates, _formatted_dates, _allocation_history, _visited_leaves_history, _length_of_backtest, _other_fields)
 
     @staticmethod
     def from_json_file(file_path: str) -> 'Quantmage_Data':
@@ -62,5 +64,4 @@ class Quantmage_Data:
     
 if __name__ == "__main__":
     data = Quantmage_Data.from_json_file("D:\\Git Repos\\quantmage_api\\81e1430056f8e243f6ff97855738bdca.json")
-    
     
