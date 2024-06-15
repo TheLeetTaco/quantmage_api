@@ -43,7 +43,7 @@ class Quantmage_Data:
         _allocation_history = obj.get("allocation_history")
         _assets = obj.get("assets")
         
-        _branches = obj.get("allocation_history")
+        _branches = obj.get("visited_leaves_history")
         
         with open('dates.json', 'r') as file:
             raw_dates = json.load(file)["dates"]
