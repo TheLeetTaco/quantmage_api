@@ -31,6 +31,7 @@ class Quantmage_Data:
     formatted_dates: List[str] = field(default_factory=list)
     allocation_history: List[List[Allocation]] = field(default_factory=list)
     visited_leaves_history: List[List[int]] = field(default_factory=list)
+    daily_info: List[Day_Info] = field(default_factory=list)
     length_of_backtest: int = field(default_factory=dict)
     other_fields: Dict[str, Any] = field(default_factory=dict)
 
@@ -39,7 +40,10 @@ class Quantmage_Data:
         _spell_name = obj.get("spell_name")
         _backtest_percent = obj.get("value_history")
         _backtest_percent_yc_to = obj.get("value_history2")
+        _allocation_history = obj.get("allocation_history")
         _assets = obj.get("assets")
+        
+        _branches = obj.get("allocation_history")
         
         with open('dates.json', 'r') as file:
             raw_dates = json.load(file)["dates"]
@@ -58,11 +62,22 @@ class Quantmage_Data:
                 
         _visited_leaves_history = obj.get("visited_leaves_history")
         
+        _daily_info = []
+        # Iterate over each day collecting info
+        for index, date in enumerate(_dates):
+            # Collect Profit 
+            profit = 0.0
+            day_tickers = []
+            for asset in _allocation_history[index]:
+                profit += asset.profit
+                day_tickers.append(asset.ticker)
+            _daily_info.append(Day_Info(date=date, tickers=day_tickers, allocation=_allocation_history[index], branches=_branches[index], profit=profit))
+        
         # Extract other fields
         known_fields = {"value_history", "dates", "allocation_history", "visited_leaves_history"}
         _other_fields = {k: v for k, v in obj.items() if k not in known_fields}
         
-        return Quantmage_Data(_spell_name, _assets , _backtest_percent, _backtest_percent_yc_to, _dates, _formatted_dates, _allocation_history, _visited_leaves_history, _length_of_backtest, _other_fields)
+        return Quantmage_Data(_spell_name, _assets , _backtest_percent, _backtest_percent_yc_to, _dates, _formatted_dates, _allocation_history, _visited_leaves_history, _daily_info ,_length_of_backtest, _other_fields)
 
     @staticmethod
     def from_json_file(file_path: str) -> 'Quantmage_Data':
