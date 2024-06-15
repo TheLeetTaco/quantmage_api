@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import List, Any, Dict
 from datetime import datetime
 import json
@@ -23,17 +23,22 @@ class Day_Info:
 
 @dataclass
 class Quantmage_Data:
-    spell_name: str = field(default_factory=list)
-    assets: List[str] = field(default_factory=list)
-    backtest_percent: List[float] = field(default_factory=list)
-    backtest_percent_yc_to: List[float] = field(default_factory=list)
-    dates: List[int] = field(default_factory=list)
-    formatted_dates: List[str] = field(default_factory=list)
-    allocation_history: List[List[Allocation]] = field(default_factory=list)
-    visited_leaves_history: List[List[int]] = field(default_factory=list)
-    daily_info: List[Day_Info] = field(default_factory=list)
-    number_of_days: int = field(default_factory=dict)
-    other_fields: Dict[str, Any] = field(default_factory=dict)
+    """Main Datastorage for Quantmage
+
+    Returns:
+        Quantmage Dataclass: Stores the API call
+    """
+    spell_name: str 
+    assets: List[str] 
+    backtest_percent: List[float] 
+    backtest_percent_yc_to: List[float] 
+    dates: List[int] 
+    formatted_dates: List[str] 
+    allocation_history: List[List[Allocation]] 
+    visited_leaves_history: List[List[int]] 
+    daily_info: List[Day_Info] 
+    number_of_days: int 
+    other_fields: Dict[str, Any] 
 
     @staticmethod
     def from_json(obj: Any) -> 'Quantmage_Data':
