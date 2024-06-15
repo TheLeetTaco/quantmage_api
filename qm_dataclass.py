@@ -32,7 +32,7 @@ class Quantmage_Data:
     allocation_history: List[List[Allocation]] = field(default_factory=list)
     visited_leaves_history: List[List[int]] = field(default_factory=list)
     daily_info: List[Day_Info] = field(default_factory=list)
-    length_of_backtest: int = field(default_factory=dict)
+    number_of_days: int = field(default_factory=dict)
     other_fields: Dict[str, Any] = field(default_factory=dict)
 
     @staticmethod
@@ -53,7 +53,7 @@ class Quantmage_Data:
         # Format dates from YYYYMMDD to YYYY_MM_DD
         _formatted_dates = [datetime.strptime(str(date), "%Y%m%d").strftime("%Y_%m_%d") for date in raw_dates]
         
-        _length_of_backtest = len(_dates)
+        _number_of_days = len(_dates)
         _allocation_history = [[Allocation(*allocation) for allocation in sublist] for sublist in obj.get("allocation_history")]
         # Mapping each allocation to the associated ticker from assets
         for day in _allocation_history:
@@ -65,7 +65,7 @@ class Quantmage_Data:
         _daily_info = []
         # Iterate over each day collecting info
         for index, date in enumerate(_dates):
-            # Collect Profit 
+            # Collect Daily Info
             profit = 0.0
             day_tickers = []
             for asset in _allocation_history[index]:
@@ -77,7 +77,7 @@ class Quantmage_Data:
         known_fields = {"value_history", "dates", "allocation_history", "visited_leaves_history"}
         _other_fields = {k: v for k, v in obj.items() if k not in known_fields}
         
-        return Quantmage_Data(_spell_name, _assets , _backtest_percent, _backtest_percent_yc_to, _dates, _formatted_dates, _allocation_history, _visited_leaves_history, _daily_info ,_length_of_backtest, _other_fields)
+        return Quantmage_Data(_spell_name, _assets , _backtest_percent, _backtest_percent_yc_to, _dates, _formatted_dates, _allocation_history, _visited_leaves_history, _daily_info ,_number_of_days, _other_fields)
 
     @staticmethod
     def from_json_file(file_path: str) -> 'Quantmage_Data':
@@ -87,4 +87,3 @@ class Quantmage_Data:
     
 if __name__ == "__main__":
     data = Quantmage_Data.from_json_file("D:\\Git Repos\\quantmage_api\\81e1430056f8e243f6ff97855738bdca.json")
-    
