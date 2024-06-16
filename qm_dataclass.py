@@ -4,6 +4,7 @@ from datetime import datetime
 import numpy as np
 import json
 
+
 @dataclass
 class Allocation:
     """Used to store the allocation
@@ -26,6 +27,8 @@ class Day_Info:
 class Spell:
     """Main Datastorage for Quantmage
 
+    NOTE: Any method using window_size will default to using the number_of_days if not supplied
+
     Returns:
         Quantmage Dataclass: Stores the API call
     """
@@ -39,6 +42,7 @@ class Spell:
     visited_leaves_history: List[List[int]] 
     daily_info: List[Day_Info] 
     number_of_days: int 
+    days_traded_yearly = 252
     other_fields: Dict[str, Any] 
 
     @staticmethod
@@ -92,315 +96,443 @@ class Spell:
             data = json.load(file)
         return Spell.from_json(data)
     
-    def calc_corelation(self, other: 'Spell') -> Dict:
-        """Handles calculating the correlations when comparing to another spell
+    def rolling_window(self, data, window_size):
+        """Helper function to create a rolling window view of the data."""
+        shape = data.shape[:-1] + (data.shape[-1] - window_size + 1, window_size)
+        strides = data.strides + (data.strides[-1],)
+        return np.lib.stride_tricks.as_strided(data, shape=shape, strides=strides)
+    
+    def calculate_correlation(self, other: 'Spell', window_size: int=None) -> Dict[str, List[float]]:
+        """Calculate the rolling correlation between this spell's backtest_percent and another spell's backtest_percent
+        for a given window size.
 
         Args:
-            other (Spell): Spell to compare to
+            window_size (int): The size of the rolling window.
+            other (Spell): The other spell to compare against.
 
         Returns:
-            Dict: Returns correlation for base backtest and yc_to_backtest
+            Dict[str, List[float]]: A dictionary with keys 'correlation' and 'yc_to_correlation' containing lists of
+                                    the rolling correlation values truncated to two decimal places.
         """
-        backtest_len = -min(len(self.backtest_percent), len(other.backtest_percent))
-        this_spell = self.backtest_percent[backtest_len:]
-        other_spell = other.backtest_percent[backtest_len:]
+        window_size = window_size if window_size is not None else self.number_of_days
         
-        # Calculate and return the correlation coefficient
-        correlation = round(np.corrcoef(this_spell, other_spell)[0, 1], 2)
+        if len(self.backtest_percent) < window_size or len(other.backtest_percent) < window_size:
+            raise ValueError("Not enough data to calculate correlation for the given window size.")
         
-        this_spell = self.backtest_percent_yc_to[backtest_len:]
-        other_spell = other.backtest_percent_yc_to[backtest_len:]
-        # Calculate and return the correlation coefficient
-        yc_tocorrelation = round(np.corrcoef(this_spell, other_spell)[0, 1], 2)
+        rolling_windows_self = self.rolling_window(np.array(self.backtest_percent), window_size)
+        rolling_windows_other = self.rolling_window(np.array(other.backtest_percent), window_size)
+        correlations = []
+        yc_to_correlations = []
         
-        # yc_to correlation
-        output = {"correlation": correlation,
-                  "yc_to_correlation": yc_tocorrelation}
-        return output
+        for window_self, window_other in zip(rolling_windows_self, rolling_windows_other):
+            correlation = np.corrcoef(window_self, window_other)[0, 1]
+            correlations.append(round(correlation, 2))
+        
+        rolling_windows_self_yc_to = self.rolling_window(np.array(self.backtest_percent_yc_to), window_size)
+        rolling_windows_other_yc_to = self.rolling_window(np.array(other.backtest_percent_yc_to), window_size)
+        
+        for window_self, window_other in zip(rolling_windows_self_yc_to, rolling_windows_other_yc_to):
+            yc_to_correlation = np.corrcoef(window_self, window_other)[0, 1]
+            yc_to_correlations.append(round(yc_to_correlation, 2))
+        
+        return {"correlation": correlations, "yc_to_correlation": yc_to_correlations}
     
-    def calculate_cumulative_return(self) -> float:
-        """Calculate the Cumulative Return % based on backtest_percent.
-
-        Returns:
-            float: The Cumulative Return % truncated to two decimal places.
-        """
-        if len(self.backtest_percent) == 0:
-            raise ValueError("The backtest_percent list is empty.")
-        
-        beginning_value = self.backtest_percent[0]
-        ending_value = self.backtest_percent[-1]
-        cumulative_return = (ending_value / beginning_value - 1) * 100
-        return round(cumulative_return, 2)
-    
-    def calculate_annual_return(self) -> float:
-        """Calculate the Annual Return % based on backtest_percent.
-
-        Returns:
-            float: The Annual Return % truncated to two decimal places.
-        """
-        if len(self.backtest_percent) == 0:
-            raise ValueError("The backtest_percent list is empty.")
-        
-        beginning_value = self.backtest_percent[0]
-        ending_value = self.backtest_percent[-1]
-        number_of_years = self.number_of_days / 252  # Assuming 252 trading days in a year
-        
-        annual_return = (ending_value / beginning_value) ** (1 / number_of_years) - 1
-        return round(annual_return * 100, 2)
-    
-    def calculate_daily_win_rate(self) -> float:
-        """Calculate the Daily Win Rate % based on backtest_percent.
-
-        Returns:
-            float: The Daily Win Rate % truncated to two decimal places.
-        """
-        if len(self.backtest_percent) < 2:
-            raise ValueError("Not enough data to calculate daily win rate.")
-        
-        wins = 0
-        for i in range(1, len(self.backtest_percent)):
-            if self.backtest_percent[i] > self.backtest_percent[i - 1]:
-                wins += 1
-        
-        daily_win_rate = (wins / (len(self.backtest_percent) - 1)) * 100
-        return round(daily_win_rate, 2)
-    
-    def calculate_max_drawdown(self) -> float:
-        """Calculate the Max Drawdown % based on backtest_percent.
-
-        Returns:
-            float: The Max Drawdown % truncated to two decimal places.
-        """
-        if len(self.backtest_percent) == 0:
-            raise ValueError("The backtest_percent list is empty.")
-        
-        peak = self.backtest_percent[0]
-        max_drawdown = 0
-        for value in self.backtest_percent:
-            if value > peak:
-                peak = value
-            drawdown = (peak - value) / peak
-            if drawdown > max_drawdown:
-                max_drawdown = drawdown
-        
-        return round(max_drawdown * 100, 2)
-    
-    def calculate_cagr(self) -> float:
-        """Calculate the Compound Annual Growth Rate (CAGR) based on backtest_percent.
-
-        Returns:
-            float: The CAGR value truncated to two decimal places.
-        """
-        if len(self.backtest_percent) == 0:
-            raise ValueError("The backtest_percent list is empty.")
-        
-        beginning_value = self.backtest_percent[0]
-        ending_value = self.backtest_percent[-1]
-        number_of_years = self.number_of_days / 252  # Assuming 252 trading days in a year
-        
-        cagr = (ending_value / beginning_value) ** (1 / number_of_years) - 1
-        return round(cagr, 2)
-    
-    def calculate_calmar_ratio(self) -> float:
-        """Calculate the Calmar Ratio based on backtest_percent.
-
-        Returns:
-            float: The Calmar Ratio truncated to two decimal places.
-        """
-        annual_return = self.calculate_annual_return()
-        max_drawdown = self.calculate_max_drawdown()
-        
-        if max_drawdown == 0:
-            raise ValueError("Max Drawdown is zero, cannot calculate Calmar Ratio.")
-        
-        calmar_ratio = annual_return / max_drawdown
-        return round(calmar_ratio, 2)
-    
-    def calculate_volatility(self) -> float:
-        """Calculate the Volatility % based on backtest_percent.
-
-        Returns:
-            float: The Volatility % truncated to two decimal places.
-        """
-        if len(self.backtest_percent) < 2:
-            raise ValueError("Not enough data to calculate volatility.")
-        
-        daily_returns = np.diff(self.backtest_percent) / self.backtest_percent[:-1]
-        volatility = np.std(daily_returns) * np.sqrt(252) * 100  # Annualize the volatility
-        return round(volatility, 2)
-    
-    def calculate_sharpe_ratio(self, risk_free_rate: float = 0.0) -> float:
-        """Calculate the Sharpe Ratio based on backtest_percent.
+    def calculate_cumulative_return(self, window_size: int=None) -> List[float]:
+        """Calculate the rolling Cumulative Return % based on backtest_percent for a given window size.
 
         Args:
-            risk_free_rate (float, optional): The risk-free rate. Defaults to 0.0.
+            window_size (int): The size of the rolling window.
 
         Returns:
-            float: The Sharpe Ratio truncated to two decimal places.
+            List[float]: The rolling Cumulative Return % truncated to two decimal places.
         """
-        if len(self.backtest_percent) < 2:
-            raise ValueError("Not enough data to calculate Sharpe Ratio.")
+        window_size = window_size if window_size is not None else self.number_of_days
         
-        # Calculate daily returns
-        daily_returns = np.diff(self.backtest_percent) / self.backtest_percent[:-1]
+        if len(self.backtest_percent) < window_size:
+            raise ValueError("Not enough data to calculate Cumulative Return for the given window size.")
         
-        # Calculate the mean and standard deviation of daily returns
-        mean_daily_return = np.mean(daily_returns)
-        std_dev_daily_return = np.std(daily_returns)
-        
-        if std_dev_daily_return == 0:
-            raise ValueError("Standard deviation of daily returns is zero, cannot calculate Sharpe Ratio.")
-        
-        # Annualize the mean daily return and standard deviation
-        annualized_return = mean_daily_return * 252
-        annualized_std_dev = std_dev_daily_return * np.sqrt(252)
-        
-        # Calculate the Sharpe Ratio
-        sharpe_ratio = (annualized_return - risk_free_rate) / annualized_std_dev
-        return round(sharpe_ratio, 2)
+        rolling_windows = self.rolling_window(np.array(self.backtest_percent), window_size)
+        cumulative_returns = []
+        for window in rolling_windows:
+            beginning_value = window[0]
+            ending_value = window[-1]
+            cumulative_return = ((ending_value / beginning_value) - 1) * 100
+            cumulative_returns.append(round(cumulative_return, 2))
+        return cumulative_returns
     
-    # NOTE: Possibly incorrect calculation
-    def calculate_sortino_ratio(self, risk_free_rate: float = 0.0) -> float:
-        """Calculate the Sortino Ratio based on backtest_percent.
+    def calculate_annual_return(self, window_size: int=None) -> List[float]:
+        """Calculate the rolling Annual Return % based on backtest_percent for a given window size.
 
         Args:
-            risk_free_rate (float, optional): The risk-free rate. Defaults to 0.0.
+            window_size (int): The size of the rolling window.
 
         Returns:
-            float: The Sortino Ratio truncated to two decimal places.
+            List[float]: The rolling Annual Return % truncated to two decimal places.
         """
-        if len(self.backtest_percent) < 2:
-            raise ValueError("Not enough data to calculate Sortino Ratio.")
+        window_size = window_size if window_size is not None else self.number_of_days
         
-        # Calculate daily returns
-        daily_returns = np.diff(self.backtest_percent) / self.backtest_percent[:-1]
+        if len(self.backtest_percent) < window_size:
+            raise ValueError("Not enough data to calculate Annual Return for the given window size.")
         
-        # Calculate the mean daily return
-        mean_daily_return = np.mean(daily_returns)
+        rolling_windows = self.rolling_window(np.array(self.backtest_percent), window_size)
+        annual_returns = []
+        for window in rolling_windows:
+            beginning_value = window[0]
+            ending_value = window[-1]
+            number_of_years = window_size / 252  # Assuming 252 trading days in a year
+            annual_return = ((ending_value / beginning_value) ** (1 / number_of_years) - 1) * 100
+            annual_returns.append(round(annual_return, 2))
+        return annual_returns
+    
+    def calculate_daily_win_rate(self, window_size: int=None) -> List[float]:
+        """Calculate the rolling Daily Win Rate % based on backtest_percent for a given window size.
+
+        Args:
+            window_size (int): The size of the rolling window.
+
+        Returns:
+            List[float]: The rolling Daily Win Rate % truncated to two decimal places.
+        """
+        window_size = window_size if window_size is not None else self.number_of_days
         
-        # Calculate the downside deviation (only considering negative returns)
-        downside_returns = daily_returns[daily_returns < 0]
-        downside_deviation = np.std(downside_returns)
+        if len(self.backtest_percent) < window_size:
+            raise ValueError("Not enough data to calculate Daily Win Rate for the given window size.")
         
-        if downside_deviation == 0:
-            raise ValueError("Downside deviation of returns is zero, cannot calculate Sortino Ratio.")
+        rolling_windows = self.rolling_window(np.array(self.backtest_percent), window_size)
+        daily_win_rates = []
+        for window in rolling_windows:
+            wins = 0
+            for i in range(1, len(window)):
+                if window[i] > window[i - 1]:
+                    wins += 1
+            daily_win_rate = (wins / (len(window) - 1)) * 100
+            daily_win_rates.append(round(daily_win_rate, 2))
+        return daily_win_rates
+    
+    def calculate_max_drawdown(self, window_size: int=None) -> List[float]:
+        """Calculate the rolling Max Drawdown % based on backtest_percent for a given window size.
+
+        Args:
+            window_size (int): The size of the rolling window.
+
+        Returns:
+            List[float]: The rolling Max Drawdown % truncated to two decimal places.
+        """
+        window_size = window_size if window_size is not None else self.number_of_days
         
-        # Annualize the mean daily return and downside deviation
-        annualized_return = mean_daily_return * 252
-        annualized_downside_deviation = downside_deviation * np.sqrt(252)
+        if len(self.backtest_percent) < window_size:
+            raise ValueError("Not enough data to calculate Max Drawdown for the given window size.")
         
-        # Calculate the Sortino Ratio
-        sortino_ratio = (annualized_return - risk_free_rate) / annualized_downside_deviation
-        return round(sortino_ratio, 2)
+        rolling_windows = self.rolling_window(np.array(self.backtest_percent), window_size)
+        max_drawdowns = []
+        for window in rolling_windows:
+            peak = window[0]
+            max_drawdown = 0
+            for value in window:
+                if value > peak:
+                    peak = value
+                drawdown = (peak - value) / peak
+                if drawdown > max_drawdown:
+                    max_drawdown = drawdown
+            max_drawdowns.append(round(max_drawdown * 100, 2))  # Convert to percentage
+        return max_drawdowns
+    
+    def calculate_cagr(self, window_size: int=None) -> List[float]:
+        """Calculate the rolling CAGR % based on backtest_percent for a given window size.
+
+        Args:
+            window_size (int): The size of the rolling window.
+
+        Returns:
+            List[float]: The rolling CAGR % truncated to two decimal places.
+        """
+        window_size = window_size if window_size is not None else self.number_of_days
+        
+        if len(self.backtest_percent) < window_size:
+            raise ValueError("Not enough data to calculate CAGR for the given window size.")
+        
+        rolling_windows = self.rolling_window(np.array(self.backtest_percent), window_size)
+        cagr_list = []
+        for window in rolling_windows:
+            beginning_value = window[0]
+            ending_value = window[-1]
+            number_of_years = window_size / self.days_traded_yearly  
+            cagr = ((ending_value / beginning_value) ** (1 / number_of_years) - 1) * 100
+            cagr_list.append(round(cagr, 2))
+        return cagr_list
+    
+    def calculate_calmar_ratio(self, window_size: int=None) -> List[float]:
+        """Calculate the rolling Calmar Ratio based on backtest_percent for a given window size.
+
+        Args:
+            window_size (int): The size of the rolling window.
+
+        Returns:
+            List[float]: The rolling Calmar Ratio truncated to two decimal places.
+        """
+        window_size = window_size if window_size is not None else self.number_of_days
+        
+        if len(self.backtest_percent) < window_size:
+            raise ValueError("Not enough data to calculate Calmar Ratio for the given window size.")
+        
+        rolling_windows = self.rolling_window(np.array(self.backtest_percent), window_size)
+        calmar_ratios = []
+        for window in rolling_windows:
+            beginning_value = window[0]
+            ending_value = window[-1]
+            annual_return = ((ending_value / beginning_value) ** (self.days_traded_yearly / window_size) - 1) * 100
+            
+            peak = window[0]
+            max_drawdown = 0
+            for value in window:
+                if value > peak:
+                    peak = value
+                drawdown = (peak - value) / peak
+                if drawdown > max_drawdown:
+                    max_drawdown = drawdown
+            
+            max_drawdown *= 100  # Convert to percentage
+            if max_drawdown == 0:
+                calmar_ratio = float('nan')
+            else:
+                calmar_ratio = annual_return / max_drawdown
+            calmar_ratios.append(round(calmar_ratio, 2))
+        return calmar_ratios
+    
+    def calculate_volatility(self, window_size: int=None) -> List[float]:
+        """Calculate the rolling Volatility % based on backtest_percent for a given window size."""
+        window_size = window_size if window_size is not None else self.number_of_days
+        if len(self.backtest_percent) < window_size:
+            raise ValueError("Not enough data to calculate volatility for the given window size.")
+        rolling_windows = self.rolling_window(np.array(self.backtest_percent), window_size)
+        volatilities = []
+        for window in rolling_windows:
+            daily_returns = np.diff(window) / window[:-1]
+            volatility = np.std(daily_returns) * np.sqrt(self.days_traded_yearly) * 100  # Annualize the volatility
+            volatilities.append(round(volatility, 2))
+        return volatilities
+    
+    def calculate_sharpe_ratio(self, window_size: int=None, risk_free_rate: float = 0.0) -> List[float]:
+        """Calculate the rolling Sharpe Ratio based on backtest_percent for a given window size."""
+        window_size = window_size if window_size is not None else self.number_of_days
+        if len(self.backtest_percent) < window_size:
+            raise ValueError("Not enough data to calculate Sharpe Ratio for the given window size.")
+        
+        rolling_windows = self.rolling_window(np.array(self.backtest_percent), window_size)
+        sharpe_ratios = []
+        for window in rolling_windows:
+            daily_returns = np.diff(window) / window[:-1]
+            mean_daily_return = np.mean(daily_returns)
+            std_dev_daily_return = np.std(daily_returns)
+            
+            if std_dev_daily_return == 0:
+                sharpe_ratios.append(float('nan'))
+            else:
+                annualized_return = mean_daily_return * self.days_traded_yearly
+                annualized_std_dev = std_dev_daily_return * np.sqrt(self.days_traded_yearly)
+                sharpe_ratio = (annualized_return - risk_free_rate) / annualized_std_dev
+                sharpe_ratios.append(round(sharpe_ratio, 2))
+        return sharpe_ratios
+    
+    def calculate_sortino_ratio(self, window_size: int=None, risk_free_rate: float = 0.0) -> List[float]:
+        """Calculate the rolling Sortino Ratio based on backtest_percent for a given window size."""
+        window_size = window_size if window_size is not None else self.number_of_days
+        
+        if len(self.backtest_percent) < window_size:
+            raise ValueError("Not enough data to calculate Sortino Ratio for the given window size.")
+        
+        rolling_windows = self.rolling_window(np.array(self.backtest_percent), window_size)
+        sortino_ratios = []
+        for window in rolling_windows:
+            daily_returns = np.diff(window) / window[:-1]
+            mean_daily_return = np.mean(daily_returns)
+            downside_returns = daily_returns[daily_returns < 0]
+            downside_deviation = np.std(downside_returns)
+            
+            if downside_deviation == 0:
+                sortino_ratios.append(float('nan'))
+            else:
+                annualized_return = mean_daily_return * self.days_traded_yearly
+                annualized_downside_deviation = downside_deviation * np.sqrt(self.days_traded_yearly)
+                sortino_ratio = (annualized_return - risk_free_rate) / annualized_downside_deviation
+                sortino_ratios.append(round(sortino_ratio, 2))
+        return sortino_ratios
     
     # NOTE: NOT TESTED
-    def calculate_beta(self, market_returns: List[float]) -> float:
-        """Calculate the Beta based on backtest_percent compared to market returns.
+    def calculate_beta(self, market_returns: List[float], window_size: int=None) -> List[float]:
+        """Calculate the rolling Beta based on backtest_percent compared to market returns for a given window size.
 
         Args:
+            window_size (int): The size of the rolling window.
             market_returns (List[float]): The list of market returns to compare against.
 
         Returns:
-            float: The Beta value truncated to two decimal places.
+            List[float]: The rolling Beta values truncated to two decimal places.
         """
-        if len(self.backtest_percent) != len(market_returns):
-            raise ValueError("The length of backtest_percent and market_returns must be the same.")
+        window_size = window_size if window_size is not None else self.number_of_days
         
-        if len(self.backtest_percent) < 2:
-            raise ValueError("Not enough data to calculate Beta.")
+        if len(self.backtest_percent) < window_size or len(market_returns) < window_size:
+            raise ValueError("Not enough data to calculate Beta for the given window size.")
         
-        # Calculate daily returns for the asset
-        asset_daily_returns = np.diff(self.backtest_percent) / self.backtest_percent[:-1]
+        rolling_windows_asset = self.rolling_window(np.array(self.backtest_percent), window_size)
+        rolling_windows_market = self.rolling_window(np.array(market_returns), window_size)
+        betas = []
         
-        # Calculate daily returns for the market
-        market_daily_returns = np.diff(market_returns) / market_returns[:-1]
-        
-        # Calculate covariance matrix
-        covariance_matrix = np.cov(asset_daily_returns, market_daily_returns)
-        
-        # Extract covariance between asset and market
-        covariance = covariance_matrix[0, 1]
-        
-        # Extract variance of market returns
-        market_variance = covariance_matrix[1, 1]
-        
-        if market_variance == 0:
-            raise ValueError("Variance of market returns is zero, cannot calculate Beta.")
-        
-        # Calculate Beta
-        beta = covariance / market_variance
-        return round(beta, 2)
+        for window_asset, window_market in zip(rolling_windows_asset, rolling_windows_market):
+            asset_daily_returns = np.diff(window_asset) / window_asset[:-1]
+            market_daily_returns = np.diff(window_market) / window_market[:-1]
+            
+            covariance_matrix = np.cov(asset_daily_returns, market_daily_returns)
+            covariance = covariance_matrix[0, 1]
+            market_variance = covariance_matrix[1, 1]
+            
+            if market_variance == 0:
+                betas.append(float('nan'))
+            else:
+                beta = covariance / market_variance
+                betas.append(round(beta, 2))
+        return betas
 
-    def calculate_mar_ratio(self) -> float:
-        """Calculate the MAR Ratio.
+    def calculate_mar_ratio(self, window_size: int=None) -> List[float]:
+        """Calculate the rolling MAR Ratio based on backtest_percent for a given window size.
+
+        Args:
+            window_size (int): The size of the rolling window.
 
         Returns:
-            float: The MAR Ratio truncated to two decimal places.
+            List[float]: The rolling MAR Ratio truncated to two decimal places.
         """
-        annual_return = self.calculate_annual_return()
-        max_drawdown = self.calculate_max_drawdown()
+        window_size = window_size if window_size is not None else self.number_of_days
         
-        if max_drawdown == 0:
-            raise ValueError("Max Drawdown is zero, cannot calculate MAR Ratio.")
+        if len(self.backtest_percent) < window_size:
+            raise ValueError("Not enough data to calculate MAR Ratio for the given window size.")
         
-        mar_ratio = annual_return / max_drawdown
-        return round(mar_ratio, 2)
+        annual_returns = self.calculate_annual_return(window_size)
+        max_drawdowns = self.calculate_max_drawdown(window_size)
+        mar_ratios = []
+        
+        for annual_return, max_drawdown in zip(annual_returns, max_drawdowns):
+            if max_drawdown == 0:
+                mar_ratios.append(float('nan'))
+            else:
+                mar_ratio = annual_return / max_drawdown
+                mar_ratios.append(round(mar_ratio, 2))
+        return mar_ratios
     
-    def calculate_ulcer_index(self) -> float:
-        """Calculate the Ulcer Index based on backtest_percent.
+    def calculate_ulcer_index(self, window_size: int=None) -> List[float]:
+        """Calculate the rolling Ulcer Index based on backtest_percent for a given window size.
+
+        Args:
+            window_size (int): The size of the rolling window.
 
         Returns:
-            float: The Ulcer Index truncated to two decimal places.
+            List[float]: The rolling Ulcer Index truncated to two decimal places.
         """
-        if len(self.backtest_percent) < 2:
-            raise ValueError("Not enough data to calculate Ulcer Index.")
+        window_size = window_size if window_size is not None else self.number_of_days
         
-        peak = self.backtest_percent[0]
-        sum_squared_drawdowns = 0
-        n = len(self.backtest_percent)
+        if len(self.backtest_percent) < window_size:
+            raise ValueError("Not enough data to calculate Ulcer Index for the given window size.")
         
-        for value in self.backtest_percent:
-            if value > peak:
-                peak = value
-            drawdown = ((peak - value) / peak) * 100  # Calculate percentage drawdown
-            sum_squared_drawdowns += drawdown ** 2
-        
-        ulcer_index = (sum_squared_drawdowns / n) ** 0.5
-        return round(ulcer_index, 2)
+        rolling_windows = self.rolling_window(np.array(self.backtest_percent), window_size)
+        ulcer_indices = []
+        for window in rolling_windows:
+            peak = window[0]
+            sum_squared_drawdowns = 0
+            n = len(window)
+            for value in window:
+                if value > peak:
+                    peak = value
+                drawdown = ((peak - value) / peak) * 100  # Calculate percentage drawdown
+                sum_squared_drawdowns += drawdown ** 2
+            ulcer_index = (sum_squared_drawdowns / n) ** 0.5
+            ulcer_indices.append(round(ulcer_index, 2))
+        return ulcer_indices
 
-    def calculate_ulcer_performance_index(self) -> float:
-        """Calculate the Ulcer Performance Index.
+    def calculate_ulcer_performance_index(self, window_size: int=None) -> List[float]:
+        """Calculate the rolling Ulcer Performance Index based on backtest_percent for a given window size.
+
+        Args:
+            window_size (int): The size of the rolling window.
 
         Returns:
-            float: The Ulcer Performance Index truncated to two decimal places.
+            List[float]: The rolling Ulcer Performance Index truncated to two decimal places.
         """
-        annual_return = self.calculate_annual_return()
-        ulcer_index = self.calculate_ulcer_index()
+        window_size = window_size if window_size is not None else self.number_of_days
         
-        if ulcer_index == 0:
-            raise ValueError("Ulcer Index is zero, cannot calculate Ulcer Performance Index.")
+        if len(self.backtest_percent) < window_size:
+            raise ValueError("Not enough data to calculate Ulcer Performance Index for the given window size.")
         
-        ulcer_performance_index = annual_return / ulcer_index
-        return round(ulcer_performance_index, 2)
+        rolling_windows = self.rolling_window(np.array(self.backtest_percent), window_size)
+        ulcer_indices = self.calculate_ulcer_index(window_size)
+        ulcer_performance_indices = []
+        
+        for i, window in enumerate(rolling_windows):
+            beginning_value = window[0]
+            ending_value = window[-1]
+            number_of_years = window_size / self.days_traded_yearly
+            annual_return = ((ending_value / beginning_value) ** (1 / number_of_years) - 1) * 100
+            
+            ulcer_index = ulcer_indices[i]
+            
+            if ulcer_index == 0:
+                ulcer_performance_indices.append(float('nan'))
+            else:
+                ulcer_performance_index = annual_return / ulcer_index
+                ulcer_performance_indices.append(round(ulcer_performance_index, 2))
+        return ulcer_performance_indices
 
-    def calculate_gain_to_pain_ratio(self) -> float:
-        """Calculate the Gain to Pain Ratio based on backtest_percent.
+    def calculate_gain_to_pain_ratio(self, window_size: int=None) -> List[float]:
+        """Calculate the rolling Gain to Pain Ratio based on backtest_percent for a given window size.
+
+        Args:
+            window_size (int): The size of the rolling window.
 
         Returns:
-            float: The Gain to Pain Ratio truncated to two decimal places.
+            List[float]: The rolling Gain to Pain Ratio truncated to two decimal places.
         """
-        if len(self.backtest_percent) < 2:
-            raise ValueError("Not enough data to calculate Gain to Pain Ratio.")
+        window_size = window_size if window_size is not None else self.number_of_days
         
-        daily_returns = np.diff(self.backtest_percent) / self.backtest_percent[:-1]
-        sum_gains = np.sum(daily_returns[daily_returns > 0])
-        sum_losses = np.sum(np.abs(daily_returns[daily_returns < 0]))
+        if len(self.backtest_percent) < window_size:
+            raise ValueError("Not enough data to calculate Gain to Pain Ratio for the given window size.")
         
-        if sum_losses == 0:
-            raise ValueError("Sum of losses is zero, cannot calculate Gain to Pain Ratio.")
+        rolling_windows = self.rolling_window(np.array(self.backtest_percent), window_size)
+        gain_to_pain_ratios = []
+        for window in rolling_windows:
+            daily_returns = np.diff(window) / window[:-1]
+            sum_gains = np.sum(daily_returns[daily_returns > 0])
+            sum_losses = np.sum(np.abs(daily_returns[daily_returns < 0]))
+            
+            if sum_losses == 0:
+                gain_to_pain_ratios.append(float('nan'))
+            else:
+                gain_to_pain_ratio = sum_gains / sum_losses
+                gain_to_pain_ratios.append(round(gain_to_pain_ratio - 1, 2))
+        return gain_to_pain_ratios
+    
+    def calculate_downside_deviation(self, window_size: int=None, target_return: float = 0.0) -> List[float]:
+        """Calculate the rolling Downside Deviation % based on backtest_percent for a given window size.
+
+        Args:
+            window_size (int): The size of the rolling window.
+            target_return (float, optional): The target return for downside deviation calculation. Defaults to 0.0.
+
+        Returns:
+            List[float]: The rolling Downside Deviation % truncated to two decimal places.
+        """
+        window_size = window_size if window_size is not None else self.number_of_days
         
-        gain_to_pain_ratio = sum_gains / sum_losses
-        return round(gain_to_pain_ratio - 1, 2)
+        if len(self.backtest_percent) < window_size:
+            raise ValueError("Not enough data to calculate downside deviation for the given window size.")
+        
+        rolling_windows = self.rolling_window(np.array(self.backtest_percent), window_size)
+        downside_deviations = []
+        for window in rolling_windows:
+            daily_returns = np.diff(window) / window[:-1]
+            downside_returns = daily_returns[daily_returns < target_return]
+            downside_deviation = np.std(downside_returns)
+            annualized_downside_deviation = downside_deviation * np.sqrt(self.days_traded_yearly) * 100  # Annualize the downside deviation
+            downside_deviations.append(round(annualized_downside_deviation, 2))
+        return downside_deviations
 
     
 if __name__ == "__main__":
@@ -409,17 +541,18 @@ if __name__ == "__main__":
     enter = Spell.from_json_file("D:\\Git Repos\\quantmage_api\\ba7158f9bf6d88ea87db0341f6c4a849.json")
     print(enter.name)
     
-    # print(enter.calc_corelation(enter))
-    print(f"CAGR: {enter.calculate_cagr()}")
-    print(f"CR: {enter.calculate_cumulative_return()}")
-    print(f"AR: {enter.calculate_annual_return()}")
-    print(f"Daily Win Rate: {enter.calculate_daily_win_rate()}")
-    print(f"MDD: {enter.calculate_max_drawdown()}")
-    print(f"Calmer: {enter.calculate_calmar_ratio()}")
-    print(f"Volatility: {enter.calculate_volatility()}")
-    print(f"Sharpe: {enter.calculate_sharpe_ratio()}")
-    print(f"Sortino: {enter.calculate_sortino_ratio()}")
-    print(f"MAR: {enter.calculate_mar_ratio()}")
-    print(f"UPI: {enter.calculate_ulcer_performance_index()}")
-    print(f"GPR: {enter.calculate_gain_to_pain_ratio()}")
+    print(mixed.calculate_correlation(enter))
+    print(f"CAGR: {mixed.calculate_cagr()}")
+    print(f"CR: {mixed.calculate_cumulative_return()}")
+    print(f"AR: {mixed.calculate_annual_return()}")
+    print(f"Daily Win Rate: {mixed.calculate_daily_win_rate()}")
+    print(f"MDD: {mixed.calculate_max_drawdown()}")
+    print(f"Calmer: {mixed.calculate_calmar_ratio()}")
+    print(f"Volatility: {mixed.calculate_volatility()}")
+    print(f"Sharpe: {mixed.calculate_sharpe_ratio()}")
+    print(f"Sortino: {mixed.calculate_sortino_ratio()}")
+    print(f"Downside Deviation: {mixed.calculate_downside_deviation()}")
+    print(f"MAR: {mixed.calculate_mar_ratio()}")
+    print(f"UPI: {mixed.calculate_ulcer_performance_index()}")
+    print(f"GPR: {mixed.calculate_gain_to_pain_ratio()}")
     
