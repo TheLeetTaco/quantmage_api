@@ -66,5 +66,5 @@ def batch_collect(ids):
 
 if __name__ == "__main__":
     # Example usage
-    endpoint_id = 'ba7158f9bf6d88ea87db0341f6c4a849'
+    endpoint_id = '81e1430056f8e243f6ff97855738bdca'
     quantmage_output = Quantmage_API(endpoint_id)

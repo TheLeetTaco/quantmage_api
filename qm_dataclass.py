@@ -29,7 +29,7 @@ class Spell:
     Returns:
         Quantmage Dataclass: Stores the API call
     """
-    spell_name: str 
+    name: str 
     assets: List[str] 
     backtest_percent: List[float] 
     backtest_percent_yc_to: List[float] 
@@ -43,24 +43,26 @@ class Spell:
 
     @staticmethod
     def from_json(obj: Any) -> 'Spell':
-        _spell_name = obj.get("spell_name")
+        _name = obj.get("spell_name")
         _backtest_percent = obj.get("value_history")
         _backtest_percent_yc_to = obj.get("value_history2")
-        _allocation_history = obj.get("allocation_history")
         _assets = obj.get("assets")
         
         _branches = obj.get("visited_leaves_history")
         
         with open('dates.json', 'r') as file:
             raw_dates = json.load(file)["dates"]
-        # Selects the dates the algo uses
-        _dates = raw_dates[raw_dates.index(max(obj.get("data_ranges"))):]
+        
         
         # Format dates from YYYYMMDD to YYYY_MM_DD
         _formatted_dates = [datetime.strptime(str(date), "%Y%m%d").strftime("%Y_%m_%d") for date in raw_dates]
         
-        _number_of_days = len(_dates)
+        
         _allocation_history = [[Allocation(*allocation) for allocation in sublist] for sublist in obj.get("allocation_history")]
+        # Selects the dates the algo uses
+        spell_length = -len(_allocation_history)
+        _dates = raw_dates[spell_length:]
+        _number_of_days = len(_dates)
         # Mapping each allocation to the associated ticker from assets
         for day in _allocation_history:
             for allocation in day:
@@ -76,14 +78,13 @@ class Spell:
             day_tickers = []
             for asset in _allocation_history[index]:
                 profit += asset.profit
-                day_tickers.append(asset.ticker)
             _daily_info.append(Day_Info(date=date, tickers=day_tickers, allocation=_allocation_history[index], branches=_branches[index], profit=profit))
         
         # Extract other fields
         known_fields = {"value_history", "dates", "allocation_history", "visited_leaves_history"}
         _other_fields = {k: v for k, v in obj.items() if k not in known_fields}
         
-        return Spell(_spell_name, _assets , _backtest_percent, _backtest_percent_yc_to, _dates, _formatted_dates, _allocation_history, _visited_leaves_history, _daily_info ,_number_of_days, _other_fields)
+        return Spell(_name, _assets , _backtest_percent, _backtest_percent_yc_to, _dates, _formatted_dates, _allocation_history, _visited_leaves_history, _daily_info ,_number_of_days, _other_fields)
 
     @staticmethod
     def from_json_file(file_path: str) -> 'Spell':
@@ -91,14 +92,55 @@ class Spell:
             data = json.load(file)
         return Spell.from_json(data)
     
-    def calc_corelation(self, other: 'Spell') -> int:
-        if len(self.backtest_percent) != len(other.backtest_percent):
-            raise ValueError("Both instances must have the same length of backtest_percent lists.")
+    def calc_corelation(self, other: 'Spell') -> Dict:
+        """Handles calculating the correlations when comparing to another spell
+
+        Args:
+            other (Spell): Spell to compare to
+
+        Returns:
+            Dict: Returns correlation for base backtest and yc_to_backtest
+        """
+        backtest_len = -min(len(self.backtest_percent), len(other.backtest_percent))
+        this_spell = self.backtest_percent[backtest_len:]
+        other_spell = other.backtest_percent[backtest_len:]
         
         # Calculate and return the correlation coefficient
-        correlation = np.corrcoef(self.backtest_percent, other.backtest_percent)[0, 1]
-        return correlation
+        correlation = round(np.corrcoef(this_spell, other_spell)[0, 1], 2)
+        
+        this_spell = self.backtest_percent_yc_to[backtest_len:]
+        other_spell = other.backtest_percent_yc_to[backtest_len:]
+        # Calculate and return the correlation coefficient
+        yc_tocorrelation = round(np.corrcoef(this_spell, other_spell)[0, 1], 2)
+        
+        # yc_to correlation
+        output = {"correlation": correlation,
+                  "yc_to_correlation": yc_tocorrelation}
+        return output
+    
+    def calculate_cagr(self) -> float:
+        """Calculate the Compound Annual Growth Rate (CAGR) based on backtest_percent.
+
+        Returns:
+            float: The CAGR value truncated to two decimal places.
+        """
+        if len(self.backtest_percent) == 0:
+            raise ValueError("The backtest_percent list is empty.")
+        
+        beginning_value = self.backtest_percent[0]
+        ending_value = self.backtest_percent[-1]
+        number_of_years = self.number_of_days / 252  # Assuming 252 trading days in a year
+        
+        cagr = (ending_value / beginning_value) ** (1 / number_of_years) - 1
+        return round(cagr, 2)
         
     
 if __name__ == "__main__":
-    data = Spell.from_json_file("D:\\Git Repos\\quantmage_api\\81e1430056f8e243f6ff97855738bdca.json")
+    mixed = Spell.from_json_file("D:\\Git Repos\\quantmage_api\\81e1430056f8e243f6ff97855738bdca.json")
+    print(mixed.name)
+    enter = Spell.from_json_file("D:\\Git Repos\\quantmage_api\\ba7158f9bf6d88ea87db0341f6c4a849.json")
+    print(enter.name)
+    
+    print(mixed.calc_corelation(enter))
+    
+    print(mixed.calculate_cagr())
