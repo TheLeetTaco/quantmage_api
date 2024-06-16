@@ -2,8 +2,47 @@ from dataclasses import dataclass
 from typing import List, Any, Dict
 from datetime import datetime
 import numpy as np
+import random
 import json
+import time
 
+# Easter Egg
+def magic_8_ball():
+    responses = [
+        "It is certain.",
+        "It is decidedly so.",
+        "Without a doubt.",
+        "Yes – definitely.",
+        "You may rely on it.",
+        "As I see it, yes.",
+        "Most likely.",
+        "Outlook good.",
+        "Yes.",
+        "Signs point to yes.",
+        "Reply hazy, try again.",
+        "Ask again later.",
+        "Better not tell you now.",
+        "Cannot predict now.",
+        "Concentrate and ask again.",
+        "Don't count on it.",
+        "My reply is no.",
+        "My sources say no.",
+        "Outlook not so good.",
+        "Very doubtful."
+    ]
+    print("Will this Spell make money: ")
+    # Fancy shaking effect with moving periods
+    for _ in range(3):
+        for i in range(4):
+            print("Shaking", "." * i, " " * (2 - i), end="\r")
+            time.sleep(0.25)
+        for i in range(4):
+            print("Shaking", "." * (2 - i), " " * i, end="\r")
+            time.sleep(0.25)
+    print(" " * 20, end="\r")  # Clear the line
+    
+    # Select a random response
+    print(random.choice(responses))
 
 @dataclass
 class Allocation:
@@ -358,6 +397,22 @@ class Spell:
                 sortino_ratios.append(round(sortino_ratio, 2))
         return sortino_ratios
     
+    def calculate_sortino_squared(self, window_size: int=None, risk_free_rate: float = 0.0) -> List[float]:
+        """Calculate the rolling Sortino Squared Ratio based on backtest_percent for a given window size.
+
+        Args:
+            window_size (int): The size of the rolling window.
+            risk_free_rate (float, optional): The risk-free rate. Defaults to 0.0.
+
+        Returns:
+            List[float]: The rolling Sortino Squared Ratio truncated to two decimal places.
+        """
+        window_size = window_size if window_size is not None else self.number_of_days
+        
+        sortino_ratios = self.calculate_sortino_ratio(window_size, risk_free_rate)
+        sortino_squared = [round(ratio ** 2, 2) if ratio is not float('nan') else float('nan') for ratio in sortino_ratios]
+        return sortino_squared
+    
     # NOTE: NOT TESTED
     def calculate_beta(self, market_returns: List[float], window_size: int=None) -> List[float]:
         """Calculate the rolling Beta based on backtest_percent compared to market returns for a given window size.
@@ -508,6 +563,57 @@ class Spell:
                 gain_to_pain_ratio = sum_gains / sum_losses
                 gain_to_pain_ratios.append(round(gain_to_pain_ratio - 1, 2))
         return gain_to_pain_ratios
+
+    def calculate_standard_deviation(self, window_size: int=None) -> List[float]:
+        """Calculate the rolling Standard Deviation % based on backtest_percent for a given window size.
+
+        Args:
+            window_size (int): The size of the rolling window.
+
+        Returns:
+            List[float]: The rolling Standard Deviation % truncated to two decimal places.
+        """
+        window_size = window_size if window_size is not None else self.number_of_days
+        
+        if len(self.backtest_percent) < window_size:
+            raise ValueError("Not enough data to calculate Standard Deviation for the given window size.")
+        
+        rolling_windows = self.rolling_window(np.array(self.backtest_percent), window_size)
+        standard_deviations = []
+        
+        for window in rolling_windows:
+            daily_returns = np.diff(window) / window[:-1]
+            std_dev = np.std(daily_returns) * np.sqrt(252) * 100  # Annualize the standard deviation
+            standard_deviations.append(round(std_dev, 2))
+        
+        return standard_deviations
+    
+    def calculate_upside_deviation(self, window_size: int=None, target_return: float = 0.0) -> List[float]:
+        """Calculate the rolling Upside Deviation % based on backtest_percent for a given window size.
+
+        Args:
+            window_size (int): The size of the rolling window.
+            target_return (float, optional): The target return for upside deviation calculation. Defaults to 0.0.
+
+        Returns:
+            List[float]: The rolling Upside Deviation % truncated to two decimal places.
+        """        
+        window_size = window_size if window_size is not None else self.number_of_days
+        
+        if len(self.backtest_percent) < window_size:
+            raise ValueError("Not enough data to calculate Upside Deviation for the given window size.")
+        
+        rolling_windows = self.rolling_window(np.array(self.backtest_percent), window_size)
+        upside_deviations = []
+        
+        for window in rolling_windows:
+            daily_returns = np.diff(window) / window[:-1]
+            upside_returns = daily_returns[daily_returns > target_return]
+            upside_deviation = np.std(upside_returns)
+            annualized_upside_deviation = upside_deviation * np.sqrt(252) * 100  # Annualize the upside deviation
+            upside_deviations.append(round(annualized_upside_deviation, 2))
+        
+        return upside_deviations
     
     def calculate_downside_deviation(self, window_size: int=None, target_return: float = 0.0) -> List[float]:
         """Calculate the rolling Downside Deviation % based on backtest_percent for a given window size.
@@ -534,6 +640,92 @@ class Spell:
             downside_deviations.append(round(annualized_downside_deviation, 2))
         return downside_deviations
 
+    def calculate_carp(self,  other: 'Spell', risk_free_rate: float = 0.0, window_size: int=None) -> List[float]:
+        """Calculate the rolling CARP based on backtest_percent for a given window size.
+
+        Args:
+            window_size (int): The size of the rolling window.
+            other (Spell): The other spell to compare against.
+            risk_free_rate (float, optional): The risk-free rate. Defaults to 0.0.
+
+        Returns:
+            List[float]: The rolling CARP values truncated to two decimal places.
+        """
+        window_size = window_size if window_size is not None else self.number_of_days
+        
+        if len(self.backtest_percent) < window_size or len(other.backtest_percent) < window_size:
+            raise ValueError("Not enough data to calculate CARP for the given window size.")
+
+        rolling_windows_self = self.rolling_window(np.array(self.backtest_percent), window_size)
+        rolling_windows_other = self.rolling_window(np.array(other.backtest_percent), window_size)
+        correlations = self.calculate_correlation(window_size=window_size, other=other)['correlation']
+        
+        carps = []
+        
+        for i, (window_self, correlation) in enumerate(zip(rolling_windows_self, correlations)):
+            if correlation is float('nan'):
+                carps.append(float('nan'))
+                continue
+            
+            # Calculate excess return
+            beginning_value = window_self[0]
+            ending_value = window_self[-1]
+            number_of_years = window_size / self.days_traded_yearly  # Assuming 252 trading days in a year
+            annual_return = ((ending_value / beginning_value) ** (1 / number_of_years) - 1) * 100
+            excess_return = annual_return - risk_free_rate
+            
+            # Calculate CARP
+            if correlation == 0:
+                carps.append(float('nan'))
+            else:
+                carp = excess_return / correlation
+                carps.append(round(carp, 2))
+        
+        return carps
+
+    def calculate_smart_carp(self, other: 'Spell', risk_free_rate: float = 0.0, window_size: int=None) -> List[float]:
+        """Calculate the rolling Smart CARP based on backtest_percent for a given window size.
+
+        Args:
+            window_size (int): The size of the rolling window.
+            other (Spell): The other spell to compare against.
+            risk_free_rate (float, optional): The risk-free rate. Defaults to 0.0.
+
+        Returns:
+            List[float]: The rolling Smart CARP values truncated to two decimal places.
+        """
+        window_size = window_size if window_size is not None else self.number_of_days
+        
+        if len(self.backtest_percent) < window_size or len(other.backtest_percent) < window_size:
+            raise ValueError("Not enough data to calculate Smart CARP for the given window size.")
+
+        rolling_windows_self = self.rolling_window(np.array(self.backtest_percent), window_size)
+        rolling_windows_other = self.rolling_window(np.array(other.backtest_percent), window_size)
+        correlations = self.calculate_correlation(window_size=window_size, other=other)['correlation']
+        volatilities = self.calculate_standard_deviation(window_size=window_size)  # Using standard deviation as a risk measure
+        
+        smart_carps = []
+        
+        for i, (window_self, correlation, volatility) in enumerate(zip(rolling_windows_self, correlations, volatilities)):
+            if correlation is float('nan') or volatility is float('nan'):
+                smart_carps.append(float('nan'))
+                continue
+            
+            # Calculate excess return
+            beginning_value = window_self[0]
+            ending_value = window_self[-1]
+            number_of_years = window_size / 252  # Assuming 252 trading days in a year
+            annual_return = ((ending_value / beginning_value) ** (1 / number_of_years) - 1) * 100
+            excess_return = annual_return - risk_free_rate
+            
+            # Calculate Smart CARP
+            if correlation == 0:
+                smart_carps.append(float('nan'))
+            else:
+                smart_carp = (excess_return / correlation) / volatility
+                smart_carps.append(round(smart_carp, 2))
+        
+        return smart_carps
     
 if __name__ == "__main__":
     mixed = Spell.from_json_file("D:\\Git Repos\\quantmage_api\\81e1430056f8e243f6ff97855738bdca.json")
@@ -542,17 +734,23 @@ if __name__ == "__main__":
     print(enter.name)
     
     print(mixed.calculate_correlation(enter))
-    print(f"CAGR: {mixed.calculate_cagr()}")
-    print(f"CR: {mixed.calculate_cumulative_return()}")
-    print(f"AR: {mixed.calculate_annual_return()}")
-    print(f"Daily Win Rate: {mixed.calculate_daily_win_rate()}")
-    print(f"MDD: {mixed.calculate_max_drawdown()}")
-    print(f"Calmer: {mixed.calculate_calmar_ratio()}")
-    print(f"Volatility: {mixed.calculate_volatility()}")
-    print(f"Sharpe: {mixed.calculate_sharpe_ratio()}")
-    print(f"Sortino: {mixed.calculate_sortino_ratio()}")
-    print(f"Downside Deviation: {mixed.calculate_downside_deviation()}")
-    print(f"MAR: {mixed.calculate_mar_ratio()}")
-    print(f"UPI: {mixed.calculate_ulcer_performance_index()}")
-    print(f"GPR: {mixed.calculate_gain_to_pain_ratio()}")
+    print(mixed.calculate_carp(enter))
+    print(mixed.calculate_smart_carp(enter))
+    # print(f"CAGR: {mixed.calculate_cagr()}")
+    # print(f"CR: {mixed.calculate_cumulative_return()}")
+    # print(f"AR: {mixed.calculate_annual_return()}")
+    # print(f"Daily Win Rate: {mixed.calculate_daily_win_rate()}")
+    # print(f"MDD: {mixed.calculate_max_drawdown()}")
+    # print(f"Calmer: {mixed.calculate_calmar_ratio()}")
+    # print(f"Volatility: {mixed.calculate_volatility()}")
+    # print(f"Sharpe: {mixed.calculate_sharpe_ratio()}")
+    # print(f"Sortino: {mixed.calculate_sortino_ratio()}")
+    # print(f"Sortino Squared: {mixed.calculate_sortino_squared()}")
+    # print(f"Standard Deviation: {mixed.calculate_standard_deviation()}")
+    # print(f"Upside Deviation: {mixed.calculate_upside_deviation()}")
+    # print(f"Downside Deviation: {mixed.calculate_downside_deviation()}")
+    # print(f"MAR: {mixed.calculate_mar_ratio()}")
+    # print(f"UPI: {mixed.calculate_ulcer_performance_index()}")
+    # print(f"GPR: {mixed.calculate_gain_to_pain_ratio()}")
+    # magic_8_ball()
     
