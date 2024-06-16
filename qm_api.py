@@ -1,4 +1,4 @@
-from qm_dataclass import Quantmage_Data
+from qm_dataclass import Spell
 import requests
 import json
 import time
@@ -33,7 +33,7 @@ class Quantmage_API:
             print(f"Request failed with status code {response.status_code}")
         
         # Date check
-        pull_dates = False
+        pull_dates = True
         if os.path.exists('dates.json'):
             with open('dates.json', 'r') as file:
                 raw_dates = json.load(file)["dates"]
@@ -46,14 +46,14 @@ class Quantmage_API:
         if pull_dates or (len(backtest_len) > len(dates)):
             # Then we need to pull doing a non extra api pull
             print("Missing Dates Pulling")
-            response = requests.post(self.url)
+            response = requests.post(self.url).json()
             with open('dates.json', 'w') as json_file:
                 print(response["dates"][-1])
                 json.dump({"dates": response["dates"]}, json_file)
             print("Dates Updated")
 
     def load_data(self):
-        return Quantmage_Data.from_json(self.response_data)
+        return Spell.from_json(self.response_data)
 
 def batch_collect(ids):
     collection = []
@@ -66,5 +66,5 @@ def batch_collect(ids):
 
 if __name__ == "__main__":
     # Example usage
-    endpoint_id = '81e1430056f8e243f6ff97855738bdca'
+    endpoint_id = 'ba7158f9bf6d88ea87db0341f6c4a849'
     quantmage_output = Quantmage_API(endpoint_id)

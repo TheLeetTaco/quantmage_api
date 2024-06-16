@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import List, Any, Dict
 from datetime import datetime
+import numpy as np
 import json
 
 @dataclass
@@ -22,7 +23,7 @@ class Day_Info:
     profit: float
 
 @dataclass
-class Quantmage_Data:
+class Spell:
     """Main Datastorage for Quantmage
 
     Returns:
@@ -41,7 +42,7 @@ class Quantmage_Data:
     other_fields: Dict[str, Any] 
 
     @staticmethod
-    def from_json(obj: Any) -> 'Quantmage_Data':
+    def from_json(obj: Any) -> 'Spell':
         _spell_name = obj.get("spell_name")
         _backtest_percent = obj.get("value_history")
         _backtest_percent_yc_to = obj.get("value_history2")
@@ -82,13 +83,22 @@ class Quantmage_Data:
         known_fields = {"value_history", "dates", "allocation_history", "visited_leaves_history"}
         _other_fields = {k: v for k, v in obj.items() if k not in known_fields}
         
-        return Quantmage_Data(_spell_name, _assets , _backtest_percent, _backtest_percent_yc_to, _dates, _formatted_dates, _allocation_history, _visited_leaves_history, _daily_info ,_number_of_days, _other_fields)
+        return Spell(_spell_name, _assets , _backtest_percent, _backtest_percent_yc_to, _dates, _formatted_dates, _allocation_history, _visited_leaves_history, _daily_info ,_number_of_days, _other_fields)
 
     @staticmethod
-    def from_json_file(file_path: str) -> 'Quantmage_Data':
+    def from_json_file(file_path: str) -> 'Spell':
         with open(file_path, 'r') as file:
             data = json.load(file)
-        return Quantmage_Data.from_json(data)
+        return Spell.from_json(data)
+    
+    def calc_corelation(self, other: 'Spell') -> int:
+        if len(self.backtest_percent) != len(other.backtest_percent):
+            raise ValueError("Both instances must have the same length of backtest_percent lists.")
+        
+        # Calculate and return the correlation coefficient
+        correlation = np.corrcoef(self.backtest_percent, other.backtest_percent)[0, 1]
+        return correlation
+        
     
 if __name__ == "__main__":
-    data = Quantmage_Data.from_json_file("D:\\Git Repos\\quantmage_api\\81e1430056f8e243f6ff97855738bdca.json")
+    data = Spell.from_json_file("D:\\Git Repos\\quantmage_api\\81e1430056f8e243f6ff97855738bdca.json")
