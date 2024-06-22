@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import List, Any, Dict
 from datetime import datetime
+import concurrent.futures
 import numpy as np
 import random
 import json
@@ -85,7 +86,15 @@ class Spell:
     other_fields: Dict[str, Any] 
 
     @staticmethod
-    def from_json(obj: Any) -> 'Spell':
+    def from_json(obj: json) -> 'Spell':
+        """From JSON load into a Spell
+
+        Args:
+            obj (json): json output from 
+
+        Returns:
+            Spell: Spell Loaded into a Dataclass
+        """
         _name = obj.get("spell_name")
         _backtest_percent = obj.get("value_history")
         _backtest_percent_yc_to = obj.get("value_history2")
@@ -97,8 +106,8 @@ class Spell:
             raw_dates = json.load(file)["dates"]
         
         
-        # Format dates from YYYYMMDD to YYYY_MM_DD
-        _formatted_dates = [datetime.strptime(str(date), "%Y%m%d").strftime("%Y_%m_%d") for date in raw_dates]
+        # Format dates from YYYYMMDD to YYYY-MM-DD
+        _formatted_dates = [datetime.strptime(str(date), "%Y%m%d").strftime("%Y-%m-%d") for date in raw_dates]
         
         
         _allocation_history = [[Allocation(*allocation) for allocation in sublist] for sublist in obj.get("allocation_history")]
@@ -131,6 +140,14 @@ class Spell:
 
     @staticmethod
     def from_json_file(file_path: str) -> 'Spell':
+        """From a Json file load it in to a Spell
+
+        Args:
+            file_path (str): Spell Json
+
+        Returns:
+            Spell: Spell Dataclass
+        """
         with open(file_path, 'r') as file:
             data = json.load(file)
         return Spell.from_json(data)
@@ -140,6 +157,50 @@ class Spell:
         shape = data.shape[:-1] + (data.shape[-1] - window_size + 1, window_size)
         strides = data.strides + (data.strides[-1],)
         return np.lib.stride_tricks.as_strided(data, shape=shape, strides=strides)
+    
+    def calculate_all_metrics(self, window_size: int=None) -> Dict[str, List[float]]:
+        """
+        Calculate all financial metrics in parallel and return a dictionary of results.
+
+        This method calculates various financial performance metrics over a specified window size. If no window size
+        is provided, it defaults to the total number of days (`self.number_of_days`). The calculations are executed 
+        concurrently for efficiency.
+
+        Args:
+            window_size (int, optional): The time window over which to calculate the metrics. Defaults to `self.number_of_days` if not provided.
+
+        Returns:
+            Dict[str, List[float]]: A dictionary where the keys are the metric names and the values are the calculated results.
+        """
+        window_size = window_size if window_size is not None else self.number_of_days
+        methods = [
+            ("CAGR", self.calculate_cagr),
+            ("Cumulative Return", self.calculate_cumulative_return),
+            ("Annual Return", self.calculate_annual_return),
+            ("Daily Win Rate", self.calculate_daily_win_rate),
+            ("Max Drawdown", self.calculate_max_drawdown),
+            ("Volatility", self.calculate_volatility),
+            ("Sharpe Ratio", self.calculate_sharpe_ratio),
+            ("Sortino Ratio", self.calculate_sortino_ratio),
+            ("MAR Ratio", self.calculate_mar_ratio),
+            ("Ulcer Index", self.calculate_ulcer_index),
+            ("Ulcer Performance Index", self.calculate_ulcer_performance_index),
+            ("Gain to Pain Ratio", self.calculate_gain_to_pain_ratio)
+        ]
+
+        results = {}
+        
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future_to_method = {executor.submit(method, window_size): name for name, method in methods}
+            for future in concurrent.futures.as_completed(future_to_method):
+                method_name = future_to_method[future]
+                try:
+                    result = future.result()
+                except Exception as exc:
+                    result = str(exc)
+                results[method_name] = result
+        
+        return results
     
     def calculate_correlation(self, other: 'Spell', window_size: int=None) -> Dict[str, List[float]]:
         """Calculate the rolling correlation between this spell's backtest_percent and another spell's backtest_percent
@@ -640,7 +701,7 @@ class Spell:
             downside_deviations.append(round(annualized_downside_deviation, 2))
         return downside_deviations
 
-    def calculate_carp(self,  other: 'Spell', risk_free_rate: float = 0.0, window_size: int=None) -> List[float]:
+    def calculate_carp(self, other: 'Spell', risk_free_rate: float = 0.0, window_size: int=None) -> List[float]:
         """Calculate the rolling CARP based on backtest_percent for a given window size.
 
         Args:
