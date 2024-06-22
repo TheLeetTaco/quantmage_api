@@ -104,7 +104,9 @@ class SpellAnalyzer:
     def display_calculations(self):
         """Method used to display the calculations from the Spell Dataclass
         """
+        date_length = self.spells[0].number_of_days
         for spell in self.spells:
+            date_length = min(date_length, spell.number_of_days)
             self.display_metrics(spell)
 
         metric_options = ["All", 
@@ -116,7 +118,7 @@ class SpellAnalyzer:
                           "Sharpe Ratio", 
                           "Sortino Ratio"]
         selected_metric = st.sidebar.selectbox("Select Metric", metric_options, index=0)
-        window_size = st.sidebar.number_input("Window Size (days)", min_value=7, value=30, step=1)
+        window_size = st.sidebar.number_input("Window Size (days)", min_value=7, max_value=date_length, value=30, step=1)
         
         def plot_it(metric):
             """Helper function to create plots of metrics
@@ -128,7 +130,7 @@ class SpellAnalyzer:
             for spell in self.spells:
                 metrics = spell.calculate_all_metrics(window_size)
                 metrics_dict[spell.name] = metrics[metric]
-                
+
             if metrics_dict:
                 st.write(f"### {metric}")
                 self.plot_data(self.spells[0].formatted_dates[-self.spells[0].number_of_days:], metrics_dict, metric, metric)
