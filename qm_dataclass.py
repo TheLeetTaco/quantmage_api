@@ -5,6 +5,7 @@ import concurrent.futures
 import quantstats as qs
 import pandas as pd
 import numpy as np
+import importlib
 import random
 import json
 import time
@@ -89,6 +90,22 @@ class Spell:
     number_of_days: int 
     days_traded_yearly = 252
     other_fields: Dict[str, Any] 
+    avail_methods = [
+        'avg_loss', 'avg_return', 'avg_win', 'best', 'cagr', 'calmar', 'common_sense_ratio',  
+        'consecutive_losses', 'consecutive_wins', 'cpc_index', 
+        'expected_return', 'exposure', 'gain_to_pain_ratio', 'geometric_mean', 'ghpr', 
+         'kelly_criterion', 'kurtosis', 'max_drawdown', 
+        'outlier_loss_ratio', 'outlier_win_ratio', 'payoff_ratio', 'profit_factor', 'profit_ratio', 
+        'rar', 'recovery_factor','risk_of_ruin', 'risk_return_ratio', 
+        'ror', 'sharpe', 'skew', 'sortino', 'adjusted_sortino', 'tail_ratio', 'ulcer_index',
+        'ulcer_performance_index', 'upi', 'volatility', 'win_loss_ratio', 'win_rate',
+        'worst'
+    ]
+    unavail_methods = [
+        'comp', 'compare', 'compsum', 'conditional_value_at_risk', 'cvar', 'drawdown_details', 'expected_shortfall', 'greeks',
+        'implied_volatility', 'information_ratio', 'monthly_returns', 'outliers', 'r2', 'r_squared',  'remove_outliers', 'rolling_greeks',
+        'to_drawdown_series','utils', 'value_at_risk', 'var'
+    ]
 
     @staticmethod
     def from_json(obj: json) -> 'Spell':
@@ -177,11 +194,11 @@ class Spell:
         
         return returns_df
     
-    def calculate_cagr(self, data: List=None) -> List[float]:
-        """Calculate the rolling CAGR % based on backtest_percent for a given window size.
+    def calc_avg_loss(self, data: List=None) -> List[float]:
+        """calc the rolling CAGR % based on backtest_percent for a given window size.
 
         Args:
-            data (int): The data to calculate on
+            data (int): The data to calc on
 
         Returns:
             List[float]: The CAGR % truncated to two decimal places.
@@ -189,25 +206,33 @@ class Spell:
         data = data if data else self.backtest_percent
         
         returns_df = self.prep_data(data)
-        cagr = qs.stats.cagr(pd.DataFrame(returns_df['returns']))
+        avg_loss = qs.stats.avg_loss(pd.DataFrame(returns_df['returns']))
         
-        return round(cagr["returns"]*100, 2)
+        return round(avg_loss["returns"]*100, 2)
     
-    def calculate_kelly_criterion(self, data: List=None) -> List[float]:
-        """Calculate the kelly criterion based on the data passed in.
+    def calc_quantstat(self, selection: str, data: List=None) -> int:
+        """Dynamically call methods from qs.stats
 
         Args:
-            data (int): The data to calculate on
+            selection (str): quantstat method
+            data (List, optional): List of backtest delta. Defaults to None.
+
+        Raises:
+            ModuleNotFoundError: Trying a method 
 
         Returns:
-            List[float]: The kelly criterion truncated to two decimal places.
+            int: Output of calculation
         """
         data = data if data else self.backtest_percent
         
-        returns_df = self.prep_data(data)
-        kelly = qs.stats.kelly_criterion(pd.DataFrame(returns_df['returns']))
+        if selection not in self.avail_methods:
+            raise ModuleNotFoundError("Not a valid selection from available methods")
         
-        return round(kelly["returns"]*100, 2)
+        method = getattr(qs.stats, selection, None)
+        returns_df = self.prep_data(data)
+        output = method(returns_df)
+        
+        return round(output["returns"], 2)
     
 if __name__ == "__main__":
     mixed = Spell.from_json_file("D:\\Git Repos\\quantmage_api\\81e1430056f8e243f6ff97855738bdca.json")
@@ -215,8 +240,8 @@ if __name__ == "__main__":
     # enter = Spell.from_json_file("D:\\Git Repos\\quantmage_api\\ba7158f9bf6d88ea87db0341f6c4a849.json")
     # print(enter.name)
     
-    print(f"CAGR: {mixed.calculate_cagr()}%")
-    print(f"Kelly Criterion: {mixed.calculate_kelly_criterion()}%")
+    for method in mixed.avail_methods:
+        print(f"{method}: {mixed.calc_quantstat(method)}%")
    
     # magic_8_ball()
     
